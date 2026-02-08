@@ -20,8 +20,8 @@ class Flock:
             self.boids.append(Boid(pos, vel, id=i))
 
         # Parameters
-        self.sep_radius = 15.0
-        self.align_radius = 80.0
+        self.sep_radius = 30.0
+        self.align_radius = 40.0
         self.coh_radius = 40.0
         self.sep_weight = 10.0
         self.align_weight = 5.0
@@ -107,7 +107,7 @@ class Flock:
             b.pos = new_positions[i]
             b.vel = new_velocities[i]
 
-                    
+                                        
     def get_state(self):
         return np.array([b.pos for b in self.boids]), np.array([b.vel for b in self.boids])
     
