@@ -20,13 +20,13 @@ class Flock:
             self.boids.append(Boid(pos, vel, id=i))
 
         # Parameters
-        self.sep_radius = 30.0
-        self.align_radius = 40.0
-        self.coh_radius = 40.0
-        self.sep_weight = 10.0
-        self.align_weight = 5.0
-        self.coh_weight = 3.0
-        self.dt = 0.5
+        self.sep_radius = 10.0
+        self.align_radius = 10.0
+        self.coh_radius = 10.0
+        self.sep_weight = 2.0
+        self.align_weight = 2.0
+        self.coh_weight = 2.0
+        self.dt = 1.0
 
     def limit(self, vec, maxval):
         mag = np.linalg.norm(vec)
@@ -70,9 +70,9 @@ class Flock:
 
             # combine
             accel = (
-                self.sep_weight * sep**2 +
-                self.align_weight * align**2 +
-                self.coh_weight * coh**2
+                self.sep_weight * sep +
+                self.align_weight * align +
+                self.coh_weight * coh
             )
 
             # external control
@@ -86,7 +86,7 @@ class Flock:
             # print('accel', accel)
 
             # update velocity and position
-            new_vel = b.vel + accel * self.dt
+            new_vel = 0.9 * b.vel + accel * self.dt
             new_vel = self.limit(new_vel, self.max_speed)
             new_pos = b.pos + new_vel * self.dt
             # print('new pos', new_pos)
@@ -113,4 +113,30 @@ class Flock:
     
 
 
+def leader_acceleration(t, pos, vel, max_acc):
+    """
+    Mouvement perpétuel fluide pour le leader
+    """
+    # direction principale
+    base_dir = np.array([
+        np.cos(0.2 * t),
+        np.sin(0.2 * t),
+        0.5 * np.sin(0.1 * t)
+    ])
+
+    # bruit doux
+    noise = 0.3 * np.array([
+        np.sin(1.3 * t + 1.0),
+        np.sin(1.7 * t + 2.0),
+        np.sin(1.1 * t + 3.0)
+    ])
+
+    desired = base_dir + noise
+
+    # normalisation
+    norm = np.linalg.norm(desired)
+    if norm > 1e-6:
+        desired = desired / norm * max_acc
+
+    return desired
 
