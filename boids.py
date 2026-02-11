@@ -33,7 +33,53 @@ class Flock:
         if mag > maxval and mag > 1e-8:
             return vec / mag * maxval
         return vec
+
+    def separationAccForOneBoid(self, boid, neighbors):
+        if len(neighbors) == 0:
+            return np.zeros(3)
+        rel = neighbors - boid.pos
+        dist = np.linalg.norm(rel, axis=1)
+        close_mask = (dist > 0) & (dist < self.sep_radius)
+        if np.any(close_mask):
+            return -np.sum(rel[close_mask] / (dist[close_mask][:, None]**2 + 1e-6), axis=0)
+        return np.zeros(3)
     
+    def alignAccForOneBoid(self, boid, neighbors):
+        if len(neighbors) == 0:
+            return np.zeros(3)
+        rel = neighbors - boid.pos
+        dist = np.linalg.norm(rel, axis=1)
+        align_mask = (dist > 0) & (dist < self.align_radius)
+        if np.any(align_mask):
+            return np.mean([b.vel for b in self.boids if align_mask[b.id]], axis=0) - boid.vel
+        return np.zeros(3)
+    
+    def cohAccForOneBoid(self, boid, neighbors):
+        if len(neighbors) == 0:
+            return np.zeros(3)
+        rel = neighbors - boid.pos
+        dist = np.linalg.norm(rel, axis=1)
+        coh_mask = (dist > 0) & (dist < self.coh_radius)
+        if np.any(coh_mask):
+            center = np.mean(rel[coh_mask], axis=0) + boid.pos
+            return center - boid.pos
+        return np.zeros(3)
+    
+    def computeAccCombinedSepAlignCoh(self, boid, neighbors):
+        sep = self.separationAccForOneBoid(boid, neighbors)
+        align = self.alignAccForOneBoid(boid, neighbors)
+        coh = self.cohAccForOneBoid(boid, neighbors)
+        return self.sep_weight * sep + self.align_weight * align + self.coh_weight * coh
+
+    def checkWorldWrapAround(self, pos):
+        for k in range(3):
+            if pos[k] < -self.bounds[k]:
+                pos[k] += 2 * self.bounds[k]
+            elif pos[k] > self.bounds[k]:
+                pos[k] -= 2 * self.bounds[k]
+        return pos
+    
+
     def step(self, external_actions=None):
     # external_actions: dict boid_id -> accel vector (for controlled boid)
 
@@ -45,59 +91,20 @@ class Flock:
         # print('boids debut step', self.boids)
 
         for i, b in enumerate(self.boids):
-            # find neighbors
-            rel = positions - b.pos
-            dist = np.linalg.norm(rel, axis=1)
 
-            # separation
-            close_mask = (dist > 0) & (dist < self.sep_radius)
-            sep = np.zeros(3)
-            if np.any(close_mask):
-                sep = -np.sum(rel[close_mask] / (dist[close_mask][:, None]**2 + 1e-6), axis=0)
-
-            # alignment
-            align_mask = (dist > 0) & (dist < self.align_radius)
-            align = np.zeros(3)
-            if np.any(align_mask):
-                align = np.mean(velocities[align_mask], axis=0) - b.vel
-
-            # cohesion
-            coh_mask = (dist > 0) & (dist < self.coh_radius)
-            coh = np.zeros(3)
-            if np.any(coh_mask):
-                center = np.mean(positions[coh_mask], axis=0)
-                coh = center - b.pos
-
-            # combine
-            accel = (
-                self.sep_weight * sep +
-                self.align_weight * align +
-                self.coh_weight * coh
-            )
-
-            # external control
+            accel = self.computeAccCombinedSepAlignCoh(b, positions)
+            
             if external_actions is not None and b.id in external_actions:
-                # print('ext_act_accel', external_actions[b.id])
-                # print(accel)
+
                 accel += external_actions[b.id]
 
-            # limit acceleration
             accel = self.limit(accel, self.max_acc)
-            # print('accel', accel)
 
-            # update velocity and position
-            new_vel = 0.9 * b.vel + accel * self.dt
+            new_vel = 1 * b.vel + accel * self.dt
             new_vel = self.limit(new_vel, self.max_speed)
             new_pos = b.pos + new_vel * self.dt
-            # print('new pos', new_pos)
-            # print('bounds', self.bounds)
 
-            # world wrap-around
-            for k in range(3):
-                if new_pos[k] < -self.bounds[k]:
-                    new_pos[k] += 2 * self.bounds[k]
-                elif new_pos[k] > self.bounds[k]:
-                    new_pos[k] -= 2 * self.bounds[k]
+            new_pos = self.checkWorldWrapAround(new_pos)
 
             new_positions.append(new_pos)
             new_velocities.append(new_vel)
@@ -112,10 +119,9 @@ class Flock:
         return np.array([b.pos for b in self.boids]), np.array([b.vel for b in self.boids])
     
 
-
-def leader_acceleration(t, pos, vel, max_acc):
+def leaderAccelerationPerpetualNoisy(t, pos, vel, max_acc):
     """
-    Mouvement perpétuel fluide pour le leader
+    Perpetual Movement for the leader of the flock.
     """
     # direction principale
     base_dir = np.array([
@@ -131,12 +137,11 @@ def leader_acceleration(t, pos, vel, max_acc):
         np.sin(1.1 * t + 3.0)
     ])
 
-    desired = base_dir + noise
+    desired_direction = base_dir + noise
 
     # normalisation
-    norm = np.linalg.norm(desired)
+    norm = np.linalg.norm(desired_direction)
     if norm > 1e-6:
-        desired = desired / norm * max_acc
+        desired_direction = desired_direction / norm * max_acc
 
-    return desired
-
+    return desired_direction
